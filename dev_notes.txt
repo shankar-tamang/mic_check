@@ -1,0 +1,1 @@
+# openai-whisper isn't compatible with python 3.13 and above

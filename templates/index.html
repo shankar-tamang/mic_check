@@ -3,20 +3,26 @@
 <head>
   <meta charset="UTF-8" />
   <title>Voice to Text (Flask Integrated)</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 600px; margin: 40px auto; }
+    button { margin-right: 10px; }
+    #output { margin-top: 20px; font-weight: bold; white-space: pre-wrap; }
+  </style>
 </head>
 <body>
   <h2>Voice to Text</h2>
 
   <label for="method">Choose Transcription Method:</label>
   <select id="method">
-    <option value="speech_recognition">SpeechRecognition (Google)</option>
+    <option value="speech_recognition">SpeechRecognition (Google API)</option>
     <option value="whisper">Whisper (Offline)</option>
+    <option value="google_cloud_speech">Google Cloud Speech-to-Text</option>
   </select>
 
   <br><br>
   <button id="start">Start Recording</button>
   <button id="stop" disabled>Stop Recording</button>
-  <div id="output" style="margin-top:20px; font-weight: bold;"></div>
+  <div id="output"></div>
 
   <script>
     let mediaRecorder;
@@ -30,35 +36,55 @@
     startBtn.onclick = async () => {
       startBtn.disabled = true;
       stopBtn.disabled = false;
+      outputDiv.textContent = '';
       audioChunks = [];
 
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
-      mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        mediaRecorder.ondataavailable = e => audioChunks.push(e.data);
 
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-        const formData = new FormData();
-        formData.append('audio', audioBlob, 'audio.webm');
-        outputDiv.textContent = 'Transcribing...';
+        mediaRecorder.onstop = async () => {
+          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'audio.webm');
 
-        const method = methodSelect.value;
-        const response = await fetch(`/api/transcribe?method=${method}`, {
-          method: 'POST',
-          body: formData
-        });
+          outputDiv.textContent = 'Transcribing...';
 
-        const result = await response.json();
-        outputDiv.textContent = result.text || result.error || 'No transcription received';
-      };
+          try {
+            const method = methodSelect.value;
+            const response = await fetch(`/api/transcribe?method=${method}`, {
+              method: 'POST',
+              body: formData
+            });
 
-      mediaRecorder.start();
+            if (!response.ok) {
+              const errorData = await response.json();
+              outputDiv.textContent = `Error: ${errorData.error || 'Unknown error'}`;
+              return;
+            }
+
+            const result = await response.json();
+            outputDiv.textContent = result.text || 'No transcription received';
+          } catch (err) {
+            outputDiv.textContent = `Request failed: ${err.message}`;
+          }
+        };
+
+        mediaRecorder.start();
+      } catch (err) {
+        outputDiv.textContent = `Could not start recording: ${err.message}`;
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+      }
     };
 
     stopBtn.onclick = () => {
       startBtn.disabled = false;
       stopBtn.disabled = true;
-      mediaRecorder.stop();
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
     };
   </script>
 </body>
